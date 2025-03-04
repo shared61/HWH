@@ -113,10 +113,10 @@ export const getCirclesByMember = async (userId: string): Promise<Circle[]> => {
  */
 export const getPublicCircles = async (): Promise<Circle[]> => {
   try {
+    // Simplified query to reduce index requirements
     const circlesQuery = query(
       collection(db, CIRCLES_COLLECTION),
       where('type', '==', 'public'),
-      where('status', '==', 'active'),
       orderBy('createdAt', 'desc')
     );
     
@@ -124,7 +124,11 @@ export const getPublicCircles = async (): Promise<Circle[]> => {
     const circles: Circle[] = [];
     
     querySnapshot.forEach((doc) => {
-      circles.push(formatCircleData(doc.id, doc.data()));
+      const data = doc.data();
+      // Filter active circles in the client side
+      if (data.status === 'active') {
+        circles.push(formatCircleData(doc.id, data));
+      }
     });
     
     return circles;

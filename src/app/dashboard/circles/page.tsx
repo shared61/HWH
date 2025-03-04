@@ -9,33 +9,57 @@ import { useAuth } from '../../../context/AuthContext';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Circle } from '../../../types/circle';
-import { getCirclesByUser, getCirclesByMember } from '../../../lib/firebase/circles';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../../../lib/firebase/firebase';
 
 export default function CirclesPage() {
   const { currentUser } = useAuth();
-  const [myCircles, setMyCircles] = useState<Circle[]>([]);
-  const [joinedCircles, setJoinedCircles] = useState<Circle[]>([]);
+  const [allCircles, setAllCircles] = useState<Circle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchCircles = async () => {
+    const fetchAllCircles = async () => {
       if (!currentUser) return;
       
       setLoading(true);
       setError('');
       
       try {
-        // Get circles created by the user
-        const userCircles = await getCirclesByUser(currentUser.uid);
-        setMyCircles(userCircles);
+        console.log("Fetching all circles directly from Firestore...");
         
-        // Get circles the user is a member of (but didn't create)
-        const memberCircles = await getCirclesByMember(currentUser.uid);
-        const filteredMemberCircles = memberCircles.filter(
-          circle => circle.createdBy !== currentUser.uid
+        // Direct Firestore query without complex filters
+        const circlesRef = collection(db, 'circles');
+        const querySnapshot = await getDocs(circlesRef);
+        
+        console.log(`Retrieved ${querySnapshot.size} total circles`);
+        
+        const circles: Circle[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          // Convert Firestore timestamp to Date
+          const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+          
+          circles.push({
+            id: doc.id,
+            name: data.name || 'Unnamed Circle',
+            description: data.description || '',
+            goalAmount: data.goalAmount || 0,
+            currentAmount: data.currentAmount || 0,
+            type: data.type || 'private',
+            status: data.status || 'active',
+            createdBy: data.createdBy || '',
+            createdAt: createdAt,
+            members: data.members || [],
+          });
+        });
+        
+        // Sort by creation date (newest first)
+        const sortedCircles = circles.sort((a, b) => 
+          b.createdAt.getTime() - a.createdAt.getTime()
         );
-        setJoinedCircles(filteredMemberCircles);
+        
+        setAllCircles(sortedCircles);
       } catch (err: any) {
         console.error('Error fetching circles:', err);
         setError('Failed to load circles. Please try again.');
@@ -44,7 +68,7 @@ export default function CirclesPage() {
       }
     };
     
-    fetchCircles();
+    fetchAllCircles();
   }, [currentUser]);
 
   // Format currency
@@ -71,81 +95,54 @@ export default function CirclesPage() {
     return Math.min(percentage, 100);
   };
 
-  // Render circle card
-  const renderCircleCard = (circle: Circle) => (
-    <Card key={circle.id} className="h-full flex flex-col">
-      <div className="flex justify-between items-start mb-2">
-        <h3 className="text-lg font-semibold">{circle.name}</h3>
-        <span className={`text-xs px-2 py-1 rounded-full ${
-          circle.type === 'public' 
-            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
-            : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-        }`}>
-          {circle.type === 'public' ? 'Public' : 'Private'}
-        </span>
-      </div>
-      
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 flex-grow">
-        {circle.description.length > 100 
-          ? `${circle.description.substring(0, 100)}...` 
-          : circle.description}
-      </p>
-      
-      <div className="space-y-2 mb-4">
-        <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span>Progress</span>
-            <span>{formatCurrency(circle.currentAmount || 0)} of {formatCurrency(circle.goalAmount)}</span>
-          </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-            <div 
-              className="bg-blue-600 h-2.5 rounded-full" 
-              style={{ width: `${calculateProgress(circle.currentAmount || 0, circle.goalAmount)}%` }}
-            ></div>
-          </div>
-        </div>
-        
-        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-          <span>Created: {formatDate(circle.createdAt)}</span>
-          <span>{circle.members?.length || 1} members</span>
-        </div>
-      </div>
-      
-      <Link href={`/dashboard/circles/${circle.id}`}>
-        <Button variant="outline" size="sm" fullWidth>
-          View Details
-        </Button>
-      </Link>
-    </Card>
-  );
+  // Check if user is the creator of a circle
+  const isCreator = (circle: Circle) => {
+    return currentUser && circle.createdBy === currentUser.uid;
+  };
+
+  // Check if user is a member of a circle
+  const isMember = (circle: Circle) => {
+    return currentUser && circle.members && circle.members.includes(currentUser.uid);
+  };
 
   return (
     <ProtectedRoute>
       <Layout>
-        <div className="container mx-auto px-4 py-8 sm:py-12">
+        <div className="container mx-auto px-4 py-8">
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="max-w-6xl mx-auto"
           >
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
               <div>
-                <h1 className="text-3xl font-bold">Investment Circles</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold">Investment Circles</h1>
                 <p className="text-gray-600 dark:text-gray-400 mt-1">
-                  Manage your investment circles and view your memberships
+                  All investment circles in the platform
                 </p>
               </div>
-              <Link href="/dashboard/circles/create" className="mt-4 sm:mt-0">
-                <Button>
-                  <span className="flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Create Circle
-                  </span>
-                </Button>
-              </Link>
+              <div className="flex space-x-3 mt-4 sm:mt-0">
+                <Link href="/dashboard/circles/discover">
+                  <Button variant="outline" size="sm">
+                    <span className="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      Discover Circles
+                    </span>
+                  </Button>
+                </Link>
+                <Link href="/dashboard/circles/create">
+                  <Button size="sm">
+                    <span className="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Create Circle
+                    </span>
+                  </Button>
+                </Link>
+              </div>
             </div>
 
             {error && (
@@ -166,37 +163,81 @@ export default function CirclesPage() {
                   className="h-12 w-12 rounded-full border-t-4 border-b-4 border-blue-500"
                 />
               </div>
-            ) : (
-              <div className="space-y-10">
-                {/* Circles created by the user */}
-                <div>
-                  <h2 className="text-xl font-semibold mb-4">My Circles</h2>
-                  {myCircles.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {myCircles.map(renderCircleCard)}
-                    </div>
-                  ) : (
-                    <Card>
-                      <div className="text-center py-8">
-                        <p className="text-gray-500 dark:text-gray-400 mb-4">You haven't created any investment circles yet.</p>
-                        <Link href="/dashboard/circles/create">
-                          <Button>Create Your First Circle</Button>
+            ) : allCircles.length > 0 ? (
+              <div className="space-y-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {allCircles.map(circle => (
+                    <motion.div
+                      key={circle.id}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <Card className="h-full flex flex-col">
+                        <div className="flex justify-between items-start mb-2">
+                          <h3 className="text-xl font-semibold">{circle.name}</h3>
+                          <div className="flex space-x-2">
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              circle.type === 'public' 
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                                : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                            }`}>
+                              {circle.type === 'public' ? 'Public' : 'Private'}
+                            </span>
+                            {isCreator(circle) && (
+                              <span className="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                                Creator
+                              </span>
+                            )}
+                            {!isCreator(circle) && isMember(circle) && (
+                              <span className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                                Member
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <p className="text-gray-600 dark:text-gray-300 mb-4 flex-grow">
+                          {circle.description}
+                        </p>
+                        
+                        <div className="mb-4">
+                          <div className="flex justify-between text-sm mb-1">
+                            <span>Progress</span>
+                            <span>{formatCurrency(circle.currentAmount || 0)} / {formatCurrency(circle.goalAmount)}</span>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                            <div 
+                              className="bg-blue-600 h-2 rounded-full"
+                              style={{ width: `${calculateProgress(circle.currentAmount || 0, circle.goalAmount)}%` }}
+                            />
+                          </div>
+                        </div>
+                        
+                        <div className="flex justify-between items-center text-sm text-gray-500 dark:text-gray-400 mb-4">
+                          <span>Created: {formatDate(circle.createdAt)}</span>
+                          <span>{circle.members?.length || 0} members</span>
+                        </div>
+                        
+                        <Link href={`/dashboard/circles/${circle.id}`}>
+                          <Button variant="outline" className="w-full">
+                            View Details
+                          </Button>
                         </Link>
-                      </div>
-                    </Card>
-                  )}
+                      </Card>
+                    </motion.div>
+                  ))}
                 </div>
-
-                {/* Circles the user has joined */}
-                {joinedCircles.length > 0 && (
-                  <div>
-                    <h2 className="text-xl font-semibold mb-4">Joined Circles</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {joinedCircles.map(renderCircleCard)}
-                    </div>
-                  </div>
-                )}
               </div>
+            ) : (
+              <Card>
+                <div className="text-center py-8">
+                  <p className="text-gray-500 dark:text-gray-400 mb-4">No circles available.</p>
+                  <Link href="/dashboard/circles/create">
+                    <Button>Create Your First Circle</Button>
+                  </Link>
+                </div>
+              </Card>
             )}
           </motion.div>
         </div>

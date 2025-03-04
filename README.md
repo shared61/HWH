@@ -1,6 +1,95 @@
 # Arvya Platform
 
-A modern investment circle management platform built with Next.js, Firebase, and Tailwind CSS.
+A platform for investment circles and community-based financial activities.
+
+## Investment Simulation Flow
+
+The Arvya Platform includes a simulated investment flow that allows users to:
+
+1. Add virtual money to their wallet using the Razorpay payment simulation
+2. Invest in different investment circles
+3. Track their investments across multiple circles
+4. View their investment history and portfolio
+
+### Key Features
+
+- **Wallet Management**: Add virtual money to your wallet using simulated Razorpay payments
+- **Investment Circles**: Browse and join investment circles based on your interests
+- **Investment Tracking**: Track your investments across different circles
+- **Portfolio Overview**: View your complete investment portfolio and history
+- **Real-time Updates**: All balances and investment data are updated in real-time
+
+### How to Use
+
+1. **Add Money to Wallet**:
+   - Navigate to the Wallet page
+   - Click "Add Money"
+   - Enter an amount and complete the simulated payment
+
+2. **Explore Investment Circles**:
+   - Navigate to the Circles page
+   - Browse available circles or create your own
+   - Join circles that interest you
+
+3. **Invest in Circles**:
+   - Open a circle you've joined
+   - Click "Invest Now"
+   - Enter an investment amount and confirm
+
+4. **Track Your Investments**:
+   - Navigate to the Investments page
+   - View your investment summary and history
+   - See detailed breakdowns by circle
+
+### Technical Implementation
+
+The investment simulation flow uses local storage to persist data across sessions, including:
+
+- Wallet balance and transaction history
+- Investment records and history
+- Circle fund pools and progress
+
+All API calls are simulated with appropriate delays to mimic real network requests, providing a realistic user experience without requiring actual payment processing.
+
+### Responsive Design
+
+The entire investment flow is fully responsive and works seamlessly on:
+- Desktop browsers
+- Tablets
+- Mobile devices
+
+## Development
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+
+### Setup
+
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Run the development server: `npm run dev`
+
+### Build
+
+To create a production build:
+
+```bash
+npm run build
+```
+
+The build is optimized for performance and ready for deployment.
+
+## Technologies Used
+
+- Next.js 15
+- React
+- TypeScript
+- Tailwind CSS
+- Framer Motion
+- Firebase (simulated)
+- Razorpay (simulated)
 
 ## Features
 

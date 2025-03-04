@@ -7,19 +7,28 @@ import ProtectedRoute from '../../../../components/ProtectedRoute';
 import Card from '../../../../components/Card';
 import Button from '../../../../components/Button';
 import { useAuth } from '../../../../context/AuthContext';
-import { motion } from 'framer-motion';
+import { useWallet } from '../../../../context/WalletContext';
+import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import { Circle } from '../../../../types/circle';
 import { getCircleById, joinCircle, leaveCircle } from '../../../../lib/firebase/circles';
+import { getUserInvestments } from '../../../../lib/firebase/investments';
 
 export default function CircleDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const { currentUser } = useAuth();
+  const { balance, investInCircleFromWallet, loading: walletLoading } = useWallet();
   const [circle, setCircle] = useState<Circle | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [investmentAmount, setInvestmentAmount] = useState<number>(0);
+  const [showInvestmentModal, setShowInvestmentModal] = useState(false);
+  const [investmentSuccess, setInvestmentSuccess] = useState<string | null>(null);
+  const [investmentError, setInvestmentError] = useState<string | null>(null);
+  const [userInvestments, setUserInvestments] = useState<any[]>([]);
+  const [totalInvested, setTotalInvested] = useState<number>(0);
 
   useEffect(() => {
     const fetchCircle = async () => {
@@ -46,6 +55,25 @@ export default function CircleDetailPage() {
     
     fetchCircle();
   }, [currentUser, id]);
+
+  useEffect(() => {
+    const fetchUserInvestments = async () => {
+      if (!currentUser || !id) return;
+      
+      try {
+        const investments = await getUserInvestments(currentUser.uid, id as string);
+        setUserInvestments(investments);
+        
+        // Calculate total invested
+        const total = investments.reduce((sum: number, inv: any) => sum + inv.amount, 0);
+        setTotalInvested(total);
+      } catch (err) {
+        console.error('Error fetching user investments:', err);
+      }
+    };
+    
+    fetchUserInvestments();
+  }, [currentUser, id, investmentSuccess]);
 
   // Format currency
   const formatCurrency = (amount: number) => {
@@ -140,6 +168,66 @@ export default function CircleDetailPage() {
     }
   };
 
+  // Handle investment amount change
+  const handleInvestmentAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(e.target.value);
+    setInvestmentAmount(isNaN(value) ? 0 : value);
+  };
+
+  // Handle investment amount selection
+  const handleInvestmentAmountSelect = (value: number) => {
+    setInvestmentAmount(value);
+  };
+
+  // Handle invest in circle
+  const handleInvestInCircle = async () => {
+    if (!currentUser || !circle || !circle.id) return;
+    if (investmentAmount <= 0) {
+      setInvestmentError('Please enter a valid investment amount');
+      return;
+    }
+    
+    setActionLoading(true);
+    setInvestmentError(null);
+    setInvestmentSuccess(null);
+    
+    try {
+      const result = await investInCircleFromWallet(
+        circle.id,
+        circle.name,
+        investmentAmount
+      );
+      
+      if (result.success) {
+        setInvestmentSuccess(result.message);
+        setInvestmentAmount(0);
+        
+        // Update circle's current amount in local state
+        setCircle(prev => {
+          if (!prev) return prev;
+          
+          return {
+            ...prev,
+            currentAmount: (prev.currentAmount || 0) + investmentAmount
+          };
+        });
+        
+        // Close modal after a delay
+        setTimeout(() => {
+          setShowInvestmentModal(false);
+          setInvestmentSuccess(null);
+        }, 3000);
+      } else {
+        setInvestmentError(result.message);
+      }
+    } catch (err: any) {
+      console.error('Error investing in circle:', err);
+      setInvestmentError(err.message || 'Failed to invest in circle. Please try again.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   return (
     <ProtectedRoute>
       <Layout>
@@ -201,24 +289,41 @@ export default function CircleDetailPage() {
                       </p>
                     </div>
                     
-                    {!isUserCreator() && (
-                      isUserMember() ? (
+                    <div className="flex flex-col sm:flex-row gap-2 mt-4 sm:mt-0">
+                      {isUserMember() && (
                         <Button 
-                          variant="outline" 
-                          onClick={handleLeaveCircle}
+                          onClick={() => setShowInvestmentModal(true)}
                           disabled={actionLoading}
+                          className="mb-2 sm:mb-0 sm:mr-2"
                         >
-                          {actionLoading ? 'Processing...' : 'Leave Circle'}
+                          <span className="flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                            Invest Now
+                          </span>
                         </Button>
-                      ) : (
-                        <Button 
-                          onClick={handleJoinCircle}
-                          disabled={actionLoading}
-                        >
-                          {actionLoading ? 'Processing...' : 'Join Circle'}
-                        </Button>
-                      )
-                    )}
+                      )}
+                      
+                      {!isUserCreator() && (
+                        isUserMember() ? (
+                          <Button 
+                            variant="outline" 
+                            onClick={handleLeaveCircle}
+                            disabled={actionLoading}
+                          >
+                            {actionLoading ? 'Processing...' : 'Leave Circle'}
+                          </Button>
+                        ) : (
+                          <Button 
+                            onClick={handleJoinCircle}
+                            disabled={actionLoading}
+                          >
+                            {actionLoading ? 'Processing...' : 'Join Circle'}
+                          </Button>
+                        )
+                      )}
+                    </div>
                   </div>
                   
                   <div className="mb-6">
@@ -249,6 +354,41 @@ export default function CircleDetailPage() {
                       </div>
                     </div>
                   </div>
+                  
+                  {isUserMember() && userInvestments.length > 0 && (
+                    <div className="mb-6">
+                      <h2 className="text-lg font-semibold mb-2">Your Investments</h2>
+                      <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg">
+                        <div className="flex justify-between text-sm mb-4">
+                          <span className="font-medium">Total Invested</span>
+                          <span className="font-bold">{formatCurrency(totalInvested)}</span>
+                        </div>
+                        
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                            <thead>
+                              <tr>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                              {userInvestments.map((investment) => (
+                                <tr key={investment.id}>
+                                  <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
+                                    {formatDate(investment.createdAt)}
+                                  </td>
+                                  <td className="px-4 py-2 text-sm text-right text-gray-700 dark:text-gray-300">
+                                    {formatCurrency(investment.amount)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   
                   <div>
                     <h2 className="text-lg font-semibold mb-2">Members</h2>
@@ -287,6 +427,122 @@ export default function CircleDetailPage() {
             )}
           </motion.div>
         </div>
+
+        {/* Investment Modal */}
+        <AnimatePresence>
+          {showInvestmentModal && circle && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+              onClick={() => !actionLoading && setShowInvestmentModal(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h2 className="text-xl font-bold mb-4">Invest in {circle.name}</h2>
+                
+                <div className="mb-4">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                    Your wallet balance: {formatCurrency(balance)}
+                  </p>
+                  
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Investment Amount
+                  </label>
+                  <input
+                    type="number"
+                    value={investmentAmount || ''}
+                    onChange={handleInvestmentAmountChange}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700"
+                    placeholder="Enter amount"
+                    min="0"
+                    step="1"
+                    disabled={actionLoading}
+                  />
+                </div>
+                
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleInvestmentAmountSelect(100)}
+                    disabled={actionLoading}
+                  >
+                    ₹100
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleInvestmentAmountSelect(500)}
+                    disabled={actionLoading}
+                  >
+                    ₹500
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleInvestmentAmountSelect(1000)}
+                    disabled={actionLoading}
+                  >
+                    ₹1,000
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleInvestmentAmountSelect(5000)}
+                    disabled={actionLoading}
+                  >
+                    ₹5,000
+                  </Button>
+                </div>
+                
+                {investmentError && (
+                  <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-md text-sm">
+                    {investmentError}
+                  </div>
+                )}
+                
+                {investmentSuccess && (
+                  <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-md text-sm">
+                    {investmentSuccess}
+                  </div>
+                )}
+                
+                <div className="flex justify-end space-x-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowInvestmentModal(false)}
+                    disabled={actionLoading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleInvestInCircle}
+                    disabled={actionLoading || investmentAmount <= 0 || investmentAmount > balance}
+                  >
+                    {actionLoading ? (
+                      <span className="flex items-center">
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Processing...
+                      </span>
+                    ) : (
+                      'Invest Now'
+                    )}
+                  </Button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </Layout>
     </ProtectedRoute>
   );

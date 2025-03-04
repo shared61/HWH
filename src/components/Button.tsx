@@ -11,6 +11,7 @@ interface ButtonProps {
   onClick?: () => void;
   disabled?: boolean;
   type?: 'button' | 'submit' | 'reset';
+  className?: string;
 }
 
 const Button: React.FC<ButtonProps> = ({
@@ -21,6 +22,7 @@ const Button: React.FC<ButtonProps> = ({
   onClick,
   disabled = false,
   type = 'button',
+  className = '',
 }) => {
   const baseClasses = 'rounded font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2';
   
@@ -39,7 +41,7 @@ const Button: React.FC<ButtonProps> = ({
   const widthClass = fullWidth ? 'w-full' : '';
   const disabledClass = disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer';
   
-  const buttonClasses = `${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${widthClass} ${disabledClass}`;
+  const buttonClasses = `${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${widthClass} ${disabledClass} ${className}`;
   
   return (
     <motion.button

@@ -6,6 +6,7 @@ import ProtectedRoute from '../../components/ProtectedRoute';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 import { useAuth } from '../../context/AuthContext';
+import { useWallet } from '../../context/WalletContext';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Circle } from '../../types/circle';
@@ -14,6 +15,7 @@ import { getUserProfile } from '../../lib/firebase/firestore';
 
 export default function DashboardPage() {
   const { currentUser, logout } = useAuth();
+  const { balance, loading: walletLoading } = useWallet();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -47,18 +49,34 @@ export default function DashboardPage() {
       
       try {
         // Fetch circles created by the user
-        const createdCircles = await getCirclesByUser(currentUser.uid);
-        setUserCircles(createdCircles);
+        try {
+          console.log("Dashboard: Fetching user's created circles...");
+          const createdCircles = await getCirclesByUser(currentUser.uid);
+          console.log(`Dashboard: Found ${createdCircles.length} circles created by user`);
+          setUserCircles(createdCircles);
+        } catch (userCirclesErr: any) {
+          console.error('Dashboard: Error fetching user circles:', userCirclesErr);
+          // Continue execution to try fetching member circles
+        }
         
         // Fetch circles the user is a member of
-        const joinedCircles = await getCirclesByMember(currentUser.uid);
-        // Filter out circles the user created to avoid duplicates
-        const filteredJoinedCircles = joinedCircles.filter(
-          circle => circle.createdBy !== currentUser.uid
-        );
-        setMemberCircles(filteredJoinedCircles);
+        try {
+          console.log("Dashboard: Fetching circles user is a member of...");
+          const joinedCircles = await getCirclesByMember(currentUser.uid);
+          console.log(`Dashboard: Found ${joinedCircles.length} circles where user is a member`);
+          
+          // Filter out circles the user created to avoid duplicates
+          const filteredJoinedCircles = joinedCircles.filter(
+            circle => circle.createdBy !== currentUser.uid
+          );
+          console.log(`Dashboard: After filtering, found ${filteredJoinedCircles.length} joined circles`);
+          setMemberCircles(filteredJoinedCircles);
+        } catch (memberCirclesErr: any) {
+          console.error('Dashboard: Error fetching member circles:', memberCirclesErr);
+          // Continue with what we have
+        }
       } catch (err: any) {
-        console.error('Error fetching circles:', err);
+        console.error('Dashboard: Error in overall fetch process:', err);
       }
     };
     
@@ -85,11 +103,12 @@ export default function DashboardPage() {
     return new Date(dateString).toLocaleDateString(undefined, options);
   };
 
-  // Format currency
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'INR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
     }).format(amount);
   };
 
@@ -143,19 +162,66 @@ export default function DashboardPage() {
     <ProtectedRoute>
       <Layout>
         <div className="container mx-auto px-4 py-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
+            <h1 className="text-3xl font-bold mb-4 md:mb-0">Dashboard</h1>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Link href="/dashboard/circles/create">
+                <Button>Create New Circle</Button>
+              </Link>
+              <Link href="/dashboard/wallet">
+                <Button variant="outline">Add Funds</Button>
+              </Link>
+            </div>
+          </div>
+
+          {error && (
+            <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-md">
+              {error}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {/* User Info Card */}
+            <div className="md:col-span-2">
+              <Card>
+                <div className="p-6">
+                  <h2 className="text-xl font-semibold mb-4">Welcome, {userProfile?.name || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User'}</h2>
+                  <p className="text-gray-600 dark:text-gray-400 mb-4">
+                    Manage your circles, track your contributions, and connect with other members from your dashboard.
+                  </p>
+                  <div className="flex flex-wrap gap-4">
+                    <Link href="/dashboard/profile">
+                      <Button variant="outline" size="sm">View Profile</Button>
+                    </Link>
+                    <Link href="/dashboard/circles/discover">
+                      <Button variant="outline" size="sm">Discover Circles</Button>
+                    </Link>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* Wallet Card */}
+            <div className="md:col-span-1">
+              <Card>
+                <div className="p-6">
+                  <h2 className="text-xl font-semibold mb-4">Wallet Balance</h2>
+                  <div className="text-4xl font-bold text-blue-600 mb-4">
+                    {walletLoading ? 'Loading...' : formatCurrency(balance)}
+                  </div>
+                  <Link href="/dashboard/wallet">
+                    <Button className="w-full">Manage Wallet</Button>
+                  </Link>
+                </div>
+              </Card>
+            </div>
+          </div>
+
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            <h1 className="text-3xl font-bold mb-8">Dashboard</h1>
-            
-            {error && (
-              <div className="mb-6 p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-md text-sm border-l-4 border-red-500">
-                {error}
-              </div>
-            )}
-            
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-1">
                 <Card title="Profile">
